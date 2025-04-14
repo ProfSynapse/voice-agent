@@ -1,0 +1,36 @@
+# Core dependencies
+python-dotenv>=1.0.0
+fastapi>=0.104.0
+uvicorn>=0.23.2
+pydantic>=2.4.2
+httpx>=0.25.0
+
+# Supabase integration
+supabase>=2.0.0
+postgrest>=0.10.6
+gotrue>=0.6.0
+
+# LiveKit integration
+livekit-server-sdk-python>=1.0.0
+websockets>=11.0.3
+aiortc>=1.5.0
+
+# Audio processing
+pydub>=0.25.1
+sounddevice>=0.4.6
+numpy>=1.24.0
+webrtcvad>=2.0.10
+
+# UI
+streamlit>=1.28.0
+streamlit-webrtc>=0.47.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+pytest-mock>=3.11.1
+
+# Utilities
+python-multipart>=0.0.6
+aiofiles>=23.2.1
+loguru>=0.7.0
