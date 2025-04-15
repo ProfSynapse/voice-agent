@@ -69,24 +69,28 @@ class UIComponent:
         self.event_handlers[event] = handler
         return self
         
-    def render(self) -> Dict[str, Any]:
+    def render(self) -> str:
         """
-        Render the component as a dictionary.
+        Render the component as a string.
         
         Returns:
-            Component representation as a dictionary
+            Component representation as a string
         """
-        result = {
-            "id": self.id,
-            "type": self.__class__.__name__,
-            "styles": self.styles,
-            "events": list(self.event_handlers.keys())
-        }
-        
-        if self.children:
-            result["children"] = [child.render() for child in self.children]
+        # This is a base implementation that should be overridden by subclasses
+        style_str = ""
+        if self.styles:
+            style_attrs = "; ".join([f"{k}: {v}" for k, v in self.styles.items()])
+            style_str = f' style="{style_attrs}"'
             
-        return result
+        events_str = ""
+        if self.event_handlers:
+            events_str = " " + " ".join([f'on{event}="handleEvent(\'{self.id}\', \'{event}\')"' for event in self.event_handlers.keys()])
+            
+        children_str = ""
+        if self.children:
+            children_str = "".join([child.render() for child in self.children])
+            
+        return f'<div id="{self.id}" class="ui-component {self.__class__.__name__.lower()}"{style_str}{events_str}>{children_str}</div>'
 
 
 class ComponentFactory:

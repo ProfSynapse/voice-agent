@@ -17,6 +17,7 @@ class VoiceState(enum.Enum):
     CONNECTED = "connected"
     LISTENING = "listening"
     SPEAKING = "speaking"
+    PROCESSING = "processing"
     DISCONNECTED = "disconnected"
     ERROR = "error"
 

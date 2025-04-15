@@ -266,7 +266,7 @@ class SecureErrorHandler:
         sensitive_parts = ['secret', 'password', 'credential', 'token', 'key']
         for part in sensitive_parts:
             path = re.sub(f'/{part}s?/', '/****/', path, flags=re.IGNORECASE)
-            path = re.sub(f'\\{part}s?\\', '\\****\\', path, flags=re.IGNORECASE)
+            path = re.sub(f'\\\\{part}s?\\\\', '\\\\****\\\\', path, flags=re.IGNORECASE)
             
         return path
         

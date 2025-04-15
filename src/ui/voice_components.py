@@ -510,3 +510,196 @@ class VoiceSettings(Container):
             "voice_volume": self.voice_volume
         })
         return result
+
+
+class MicrophoneButton(UIComponent):
+    """Microphone button component for controlling voice input."""
+    
+    def __init__(
+        self,
+        id: str = "microphone-button",
+        voice_service = None,
+        on_click = None,
+        styles: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize a microphone button component.
+        
+        Args:
+            id: Component ID
+            voice_service: Voice service instance
+            on_click: Click event handler
+            styles: Optional styles for the component
+        """
+        super().__init__(id, styles)
+        self.voice_service = voice_service
+        self.on_click = on_click
+        
+    async def handle_click(self):
+        """Handle button click event."""
+        if self.voice_service:
+            if self.voice_service.state == "IDLE":
+                await self.voice_service.connect()
+            elif self.voice_service.state == "CONNECTED":
+                await self.voice_service.start_listening()
+            elif self.voice_service.state == "LISTENING":
+                await self.voice_service.stop_listening()
+        
+        if self.on_click:
+            self.on_click()
+    
+    def render(self) -> str:
+        """
+        Render the microphone button component as a string.
+        
+        Returns:
+            Microphone button component representation as a string
+        """
+        state = "idle"
+        if self.voice_service:
+            state = self.voice_service.state.lower()
+            
+        return f"<button class='microphone-button {state}'>microphone</button>"
+
+
+class MuteButton(UIComponent):
+    """Mute button component for muting voice input."""
+    
+    def __init__(
+        self,
+        id: str = "mute-button",
+        voice_service = None,
+        on_click = None,
+        styles: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize a mute button component.
+        
+        Args:
+            id: Component ID
+            voice_service: Voice service instance
+            on_click: Click event handler
+            styles: Optional styles for the component
+        """
+        super().__init__(id, styles)
+        self.voice_service = voice_service
+        self.on_click = on_click
+        
+    async def handle_click(self):
+        """Handle button click event."""
+        if self.voice_service:
+            await self.voice_service.toggle_mute()
+        
+        if self.on_click:
+            self.on_click()
+    
+    def render(self) -> str:
+        """
+        Render the mute button component as a string.
+        
+        Returns:
+            Mute button component representation as a string
+        """
+        muted = self.voice_service and self.voice_service.is_muted
+        state = "muted" if muted else "unmuted"
+            
+        return f"<button class='mute-button {state}'>mute</button>"
+
+
+class VoiceStatusIndicator(UIComponent):
+    """Voice status indicator component for displaying voice service status."""
+    
+    def __init__(
+        self,
+        id: str = "voice-status",
+        voice_service = None,
+        styles: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize a voice status indicator component.
+        
+        Args:
+            id: Component ID
+            voice_service: Voice service instance
+            styles: Optional styles for the component
+        """
+        super().__init__(id, styles)
+        self.voice_service = voice_service
+        
+    def render(self) -> str:
+        """
+        Render the voice status indicator component as a string.
+        
+        Returns:
+            Voice status indicator component representation as a string
+        """
+        state = "idle"
+        if self.voice_service:
+            state = self.voice_service.state.lower()
+            
+        return f"<div class='voice-status status-{state}'>{state}</div>"
+
+
+class VoiceWaveform(UIComponent):
+    """Voice waveform component for visualizing voice input."""
+    
+    def __init__(
+        self,
+        id: str = "voice-waveform",
+        data: List[float] = None,
+        styles: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize a voice waveform component.
+        
+        Args:
+            id: Component ID
+            data: Waveform data points
+            styles: Optional styles for the component
+        """
+        super().__init__(id, styles)
+        self.data = data or []
+        
+    def render(self) -> str:
+        """
+        Render the voice waveform component as a string.
+        
+        Returns:
+            Voice waveform component representation as a string
+        """
+        data_str = ",".join(str(d) for d in self.data)
+        return f"<div class='voice-waveform' data-points='{data_str}'></div>"
+
+
+class TranscriptDisplay(UIComponent):
+    """Transcript display component for showing transcribed text."""
+    
+    def __init__(
+        self,
+        id: str = "transcript-display",
+        text: str = "",
+        is_final: bool = False,
+        styles: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize a transcript display component.
+        
+        Args:
+            id: Component ID
+            text: Transcribed text
+            is_final: Whether the transcription is final
+            styles: Optional styles for the component
+        """
+        super().__init__(id, styles)
+        self.text = text
+        self.is_final = is_final
+        
+    def render(self) -> str:
+        """
+        Render the transcript display component as a string.
+        
+        Returns:
+            Transcript display component representation as a string
+        """
+        state = "final" if self.is_final else "interim"
+        return f"<div class='transcript-display {state}'>{self.text}</div>"

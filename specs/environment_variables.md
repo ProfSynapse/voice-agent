@@ -63,6 +63,13 @@ This document outlines the environment variables required for the voice conversa
 | LOG_FORMAT | Log format | json, text | No (defaults to json) |
 | LOG_FILE | Log file path | ./logs/app.log | No (defaults to stdout) |
 
+### 2.7 Secrets Manager Configuration
+
+| Variable Name | Description | Example Value | Required |
+|---------------|-------------|--------------|----------|
+| SECRETS_MASTER_KEY | Master key for secrets encryption | random_secure_string | No (defaults to development key in non-production) |
+| SECRETS_DIR | Directory for storing encrypted secrets | ~/.config/voice_agent | No (defaults to ~/.config/voice_agent) |
+
 ## 3. Environment Setup
 
 ### 3.1 Development Environment
@@ -102,6 +109,10 @@ STORAGE_PROVIDER=supabase
 # Logging Configuration
 LOG_LEVEL=debug
 LOG_FORMAT=text
+
+# Secrets Manager Configuration
+# SECRETS_MASTER_KEY=your-master-key-for-secrets-encryption
+# SECRETS_DIR=~/.config/voice_agent
 ```
 
 ### 3.2 Production Environment
@@ -146,6 +157,10 @@ S3_SECRET_KEY=your-secret-key
 LOG_LEVEL=info
 LOG_FORMAT=json
 LOG_FILE=./logs/app.log
+
+# Secrets Manager Configuration
+SECRETS_MASTER_KEY=your-secure-production-master-key
+SECRETS_DIR=/etc/voice_agent/secrets
 ```
 
 ## 4. Environment Variable Loading
@@ -168,3 +183,7 @@ This allows for environment-specific configurations and local overrides.
 - Limit the permissions of service accounts to only what is necessary
 - Store production secrets in a secure vault or environment variable management system
 - Implement proper access controls for environment variables in CI/CD pipelines
+- Use a strong, randomly generated SECRETS_MASTER_KEY in production
+- Store the SECRETS_MASTER_KEY in a secure location separate from the application code
+- Ensure the SECRETS_DIR has appropriate file system permissions (readable only by the application user)
+- Regularly back up encrypted secrets but maintain their security during backup

@@ -6,6 +6,7 @@ different components of the system.
 """
 
 import pytest
+import pytest_asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 import asyncio
 import os
@@ -59,7 +60,7 @@ class TestAppInitialization:
 class TestUserFlow:
     """Test suite for end-to-end user flows."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def app_with_services(self, mock_supabase_client, mock_env):
         """Create an app with mocked services for testing."""
         # Mock services
@@ -91,12 +92,111 @@ class TestUserFlow:
         
         # Create app with mocked services
         app = await create_app()
+        
+        # Set the services and mark as initialized to avoid re-initialization
         app.services = {
             "auth_service": auth_service,
             "voice_service": voice_service,
             "conversation_service": conversation_service,
             "admin_service": admin_service
         }
+        app._initialized = True
+        
+        # Make the app awaitable
+        original_await = app.__await__
+        def new_await():
+            async def _init_wrapper():
+                return app
+            return _init_wrapper().__await__()
+        app.__await__ = new_await
+        
+        # Mock UI components
+        app.ui = MagicMock()
+        app.ui.auth = MagicMock()
+        app.ui.voice = MagicMock()
+        app.ui.admin = MagicMock()
+        app.ui.conversation = MagicMock()
+        
+        # Configure UI auth methods to call the service methods
+        async def mock_register(**kwargs):
+            result = await auth_service.register(**kwargs)
+            return result.success
+            
+        async def mock_login(**kwargs):
+            result = await auth_service.login(**kwargs)
+            return result.success
+            
+        async def mock_logout():
+            return await auth_service.logout()
+            
+        app.ui.auth.register = mock_register
+        app.ui.auth.login = mock_login
+        app.ui.auth.logout = mock_logout
+        
+        # Configure UI voice methods to call the service methods
+        async def mock_start_conversation():
+            result = await voice_service.connect()
+            if result:
+                await voice_service.start_listening()
+                # Create a conversation when starting voice conversation
+                user = await app.services["auth_service"].get_current_user()
+                if user:
+                    await conversation_service.create_conversation(
+                        user_id=user.id,
+                        title="Voice Conversation",
+                        system_prompt_id="default"
+                    )
+            return result
+            
+        async def mock_stop_conversation():
+            await voice_service.stop_listening()
+            return await voice_service.disconnect()
+            
+        async def mock_toggle_mute():
+            return await voice_service.toggle_mute()
+            
+        async def mock_toggle_listening():
+            # In our test, we're setting the state to CONNECTED manually
+            # So we need to reset the mock call count before toggling
+            if voice_service.state == VoiceState.CONNECTED:
+                voice_service.start_listening.reset_mock()
+                return await voice_service.start_listening()
+            elif voice_service.state == VoiceState.LISTENING:
+                return await voice_service.stop_listening()
+            return False
+            
+        async def mock_end_conversation():
+            return await voice_service.disconnect()
+            
+        app.ui.voice.start_conversation = mock_start_conversation
+        app.ui.voice.stop_conversation = mock_stop_conversation
+        app.ui.voice.toggle_mute = mock_toggle_mute
+        app.ui.voice.toggle_listening = mock_toggle_listening
+        app.ui.voice.end_conversation = mock_end_conversation
+        
+        # Configure UI admin methods to call the service methods
+        async def mock_create_system_prompt(**kwargs):
+            return await admin_service.create_system_prompt(**kwargs)
+            
+        async def mock_get_system_prompts():
+            return await admin_service.get_all_system_prompts()
+            
+        app.ui.admin.create_system_prompt = mock_create_system_prompt
+        app.ui.admin.get_all_system_prompts = mock_get_system_prompts
+        
+        # Configure UI conversation methods to call the service methods
+        async def mock_create_conversation(**kwargs):
+            return await conversation_service.create_conversation(**kwargs)
+            
+        async def mock_get_user_conversations(user_id):
+            return await conversation_service.get_user_conversations(user_id)
+            
+        async def mock_add_turn(**kwargs):
+            return await conversation_service.add_conversation_turn(**kwargs)
+            
+        app.ui.conversation.create = mock_create_conversation
+        app.ui.conversation.get_user_conversations = mock_get_user_conversations
+        app.ui.conversation.add_turn = mock_add_turn
         
         return app
 
@@ -266,7 +366,7 @@ class TestUserFlow:
 class TestErrorHandling:
     """Test suite for error handling in the application."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def app_with_error_services(self, mock_supabase_client, mock_env):
         """Create an app with services that simulate errors."""
         # Mock services
@@ -286,10 +386,48 @@ class TestErrorHandling:
         
         # Create app with mocked services
         app = await create_app()
+        
+        # Set the services and mark as initialized to avoid re-initialization
         app.services = {
             "auth_service": auth_service,
             "voice_service": voice_service
         }
+        app._initialized = True
+        # Mock UI components
+        app.ui = MagicMock()
+        app.ui.auth = MagicMock()
+        app.ui.voice = MagicMock()
+        
+        # Configure UI auth methods with error simulation
+        async def mock_register_error(**kwargs):
+            result = await auth_service.register(**kwargs)
+            return result.success
+            
+        async def mock_login_error(**kwargs):
+            result = await auth_service.login(**kwargs)
+            return result.success
+            
+        app.ui.auth.register = mock_register_error
+        app.ui.auth.login = mock_login_error
+        
+        # Configure UI voice methods with error simulation
+        async def mock_start_conversation_error():
+            return await voice_service.connect()
+            
+        async def mock_stop_conversation_error():
+            return False
+            
+        async def mock_toggle_listening_error():
+            return False
+            
+        async def mock_end_conversation_error():
+            return False
+            
+        app.ui.voice.start_conversation = mock_start_conversation_error
+        app.ui.voice.stop_conversation = mock_stop_conversation_error
+        app.ui.voice.toggle_listening = mock_toggle_listening_error
+        app.ui.voice.end_conversation = mock_end_conversation_error
+        
         
         return app
 

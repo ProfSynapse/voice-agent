@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "voice-agent",
+			"path": "."
+		},
+		{
+			"name": "liveKit",
+			"path": "../🧙🏾‍♂️ Synaptic Labs/💻 Coding/Documentation/liveKit"
+		},
+		{
+			"name": "Supabase",
+			"path": "../🧙🏾‍♂️ Synaptic Labs/💻 Coding/Documentation/Supabase"
+		}
+	],
+	"settings": {}
+}

@@ -1,70 +1,104 @@
 """
 Input Validation Module
 
-This module provides input validation and sanitization for the voice agent application.
-It implements robust validation for user inputs and content sanitization to prevent attacks.
+This module provides input validation for various types of user input,
+including LiveKit room and participant names, API parameters, and more.
 """
 
-import logging
 import re
-import html
-import unicodedata
-from typing import Any, Dict, List, Optional, Union, Callable, Pattern, Tuple
 import json
-import os
+from typing import Dict, Any, Optional, List, Tuple, Union, Pattern
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class InputValidator:
-    """Input validator for user inputs."""
+    """
+    Input Validator for validating user input.
+    
+    This class provides:
+    1. Validation for LiveKit room and participant names
+    2. Validation for API parameters
+    3. Sanitization of user input
+    """
     
     def __init__(self):
         """Initialize the input validator."""
-        # Compile common regex patterns
-        self.email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        # Compile regex patterns for common validations
+        self.room_name_pattern = re.compile(r'^[a-zA-Z0-9_-]{3,64}$')
+        self.participant_name_pattern = re.compile(r'^[a-zA-Z0-9_-]{3,64}$')
+        # Robust email regex that strictly validates email formats
+        self.email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$')
         self.username_pattern = re.compile(r'^[a-zA-Z0-9_-]{3,32}$')
-        self.url_pattern = re.compile(r'^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$')
-        self.phone_pattern = re.compile(r'^\+?[0-9]{10,15}$')
-        self.password_pattern = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
+        # Secure URL regex that blocks potentially malicious URLs
+        self.url_pattern = re.compile(r'^https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?::\d+)?(?:/[-\w%!$&\'()*+,;=:@/~]+)*(?:\?(?:[-\w%!$&\'()*+,;=:@/~]|(?:%[\da-fA-F]{2}))*)?(?:#(?:[-\w%!$&\'()*+,;=:@/~]|(?:%[\da-fA-F]{2}))*)?$')
+        # Comprehensive block for common malicious URL patterns
+        self.malicious_url_pattern = re.compile(r'(?:javascript|data|vbscript|file|about|blob):|<|>|\(|\)|eval\(|document\.cookie|document\.write|window\.location|fromCharCode|String\.fromCharCode|alert\(|confirm\(|prompt\(|fetch\(|XMLHttpRequest|ActiveXObject')
         
-        # Load common password list
-        self.common_passwords = self._load_common_passwords()
+        # Common patterns for injection attacks
+        self.sql_injection_pattern = re.compile(r'(?i)(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|EXEC|--|;)')
+        self.xss_pattern = re.compile(r'(?i)(<script|javascript:|on\w+\s*=|<iframe|<img|alert\(|eval\()')
+        # Comprehensive path traversal detection that catches both relative and absolute paths
+        self.path_traversal_pattern = re.compile(r'(?:\.\.\/|\.\.\\|^\/|^\\|^[A-Za-z]:\\|%2e%2e%2f|%2e%2e\/|%2e%2e\\|\.\.%2f|\.\.%5c|file:\/\/)')
+        # Password validation patterns
+        self.password_min_length = 8
+        self.password_max_length = 128
+        self.password_pattern = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$')
         
-    def _load_common_passwords(self) -> List[str]:
+        logger.info("Input Validator initialized")
+    
+    def validate_livekit_room_name(self, room_name: str) -> Tuple[bool, Optional[str]]:
         """
-        Load common passwords from file.
+        Validate a LiveKit room name.
         
+        Args:
+            room_name: Room name to validate
+            
         Returns:
-            List of common passwords
+            Tuple of (is_valid, error_message)
         """
-        common_passwords = []
-        try:
-            # Path to common passwords file
-            # In production, this should be a more comprehensive list
-            passwords_file = os.path.join(os.path.dirname(__file__), 'data', 'common_passwords.txt')
+        if not room_name:
+            return False, "Room name is required"
             
-            if os.path.exists(passwords_file):
-                with open(passwords_file, 'r') as f:
-                    common_passwords = [line.strip() for line in f if line.strip()]
-            else:
-                # Fallback to a small list of the most common passwords
-                common_passwords = [
-                    "password", "123456", "12345678", "qwerty", "admin",
-                    "welcome", "password1", "abc123", "letmein", "monkey",
-                    "1234567", "12345", "111111", "1234", "dragon",
-                    "123123", "baseball", "football", "shadow", "master"
-                ]
-                
-                # Create the directory and file for future use
-                os.makedirs(os.path.dirname(passwords_file), exist_ok=True)
-                with open(passwords_file, 'w') as f:
-                    f.write('\n'.join(common_passwords))
-        except Exception as e:
-            logger.error(f"Error loading common passwords: {str(e)}")
-            
-        return common_passwords
+        room_name = room_name.strip()
         
+        if len(room_name) < 3:
+            return False, "Room name must be at least 3 characters long"
+            
+        if len(room_name) > 64:
+            return False, "Room name must be at most 64 characters long"
+            
+        if not self.room_name_pattern.match(room_name):
+            return False, "Room name can only contain letters, numbers, underscores, and hyphens"
+            
+        return True, None
+    
+    def validate_livekit_participant_name(self, participant_name: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate a LiveKit participant name.
+        
+        Args:
+            participant_name: Participant name to validate
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not participant_name:
+            return False, "Participant name is required"
+            
+        participant_name = participant_name.strip()
+        
+        if len(participant_name) < 3:
+            return False, "Participant name must be at least 3 characters long"
+            
+        if len(participant_name) > 64:
+            return False, "Participant name must be at most 64 characters long"
+            
+        if not self.participant_name_pattern.match(participant_name):
+            return False, "Participant name can only contain letters, numbers, underscores, and hyphens"
+            
+        return True, None
+    
     def validate_email(self, email: str) -> Tuple[bool, Optional[str]]:
         """
         Validate an email address.
@@ -78,58 +112,13 @@ class InputValidator:
         if not email:
             return False, "Email is required"
             
-        email = email.strip().lower()
+        email = email.strip()
         
-        if len(email) > 254:
-            return False, "Email is too long"
-            
         if not self.email_pattern.match(email):
             return False, "Invalid email format"
             
         return True, None
-        
-    def validate_password(self, password: str, username: Optional[str] = None) -> Tuple[bool, Optional[str]]:
-        """
-        Validate a password.
-        
-        Args:
-            password: Password to validate
-            username: Username to check against
-            
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if not password:
-            return False, "Password is required"
-            
-        if len(password) < 8:
-            return False, "Password must be at least 8 characters long"
-            
-        if len(password) > 128:
-            return False, "Password is too long"
-            
-        if not any(c.isupper() for c in password):
-            return False, "Password must contain at least one uppercase letter"
-            
-        if not any(c.islower() for c in password):
-            return False, "Password must contain at least one lowercase letter"
-            
-        if not any(c.isdigit() for c in password):
-            return False, "Password must contain at least one number"
-            
-        if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" for c in password):
-            return False, "Password must contain at least one special character"
-            
-        # Check if password is a common password
-        if password.lower() in self.common_passwords:
-            return False, "Password is too common"
-            
-        # Check if password contains username
-        if username and username.lower() in password.lower():
-            return False, "Password should not contain username"
-            
-        return True, None
-        
+    
     def validate_username(self, username: str) -> Tuple[bool, Optional[str]]:
         """
         Validate a username.
@@ -149,13 +138,13 @@ class InputValidator:
             return False, "Username must be at least 3 characters long"
             
         if len(username) > 32:
-            return False, "Username is too long"
+            return False, "Username must be at most 32 characters long"
             
         if not self.username_pattern.match(username):
             return False, "Username can only contain letters, numbers, underscores, and hyphens"
             
         return True, None
-        
+    
     def validate_url(self, url: str) -> Tuple[bool, Optional[str]]:
         """
         Validate a URL.
@@ -171,42 +160,171 @@ class InputValidator:
             
         url = url.strip()
         
-        if len(url) > 2048:
-            return False, "URL is too long"
-            
         if not self.url_pattern.match(url):
             return False, "Invalid URL format"
+        
+        # Check for malicious URL patterns
+        if self.malicious_url_pattern.search(url):
+            return False, "URL contains potentially malicious content"
             
         return True, None
-        
-    def validate_phone(self, phone: str) -> Tuple[bool, Optional[str]]:
+    
+    def validate_json(self, json_str: str) -> Tuple[bool, Optional[str]]:
         """
-        Validate a phone number.
+        Validate a JSON string.
         
         Args:
-            phone: Phone number to validate
+            json_str: JSON string to validate
             
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if not phone:
-            return False, "Phone number is required"
+        if not json_str:
+            return False, "JSON is required"
             
-        # Remove common formatting characters
-        phone = re.sub(r'[\s\-\(\)]', '', phone)
+        try:
+            json.loads(json_str)
+            return True, None
+        except json.JSONDecodeError as e:
+            return False, f"Invalid JSON: {str(e)}"
+    
+    def check_for_injection(self, input_str: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check for common injection patterns.
         
-        if not self.phone_pattern.match(phone):
-            return False, "Invalid phone number format"
+        Args:
+            input_str: Input string to check
+            
+        Returns:
+            Tuple of (is_safe, attack_type)
+        """
+        if not input_str:
+            return True, None
+            
+        # Check for SQL injection
+        if self.sql_injection_pattern.search(input_str):
+            return False, "SQL injection"
+            
+        # Check for XSS
+        if self.xss_pattern.search(input_str):
+            return False, "Cross-site scripting (XSS)"
+            
+        # Check for path traversal
+        if self.path_traversal_pattern.search(input_str):
+            return False, "Path traversal"
+            
+        return True, None
+    
+    def sanitize_input(self, input_str: str) -> str:
+        """
+        Sanitize user input by removing potentially dangerous characters.
+        
+        Args:
+            input_str: Input string to sanitize
+            
+        Returns:
+            Sanitized string
+        """
+        if not input_str:
+            return ""
+        
+        # Use a consistent and comprehensive approach to HTML entity encoding
+        # Map of characters to their HTML entity equivalents
+        html_entities = {
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#x27;',
+            '/': '&#x2F;',
+            '&': '&amp;',
+            '`': '&#x60;',
+            '(': '&#40;',
+            ')': '&#41;',
+            '{': '&#123;',
+            '}': '&#125;',
+            '[': '&#91;',
+            ']': '&#93;'
+        }
+        
+        # Replace dangerous characters with safe alternatives
+        sanitized = ''.join(html_entities.get(c, c) for c in input_str)
+        
+        # Additional sanitization for JavaScript event handlers and CSS expressions
+        sanitized = re.sub(r'(?i)on\w+\s*=', 'data-blocked=', sanitized)
+        sanitized = re.sub(r'(?i)expression\s*\(', 'ex-blocked(', sanitized)
+        
+        return sanitized
+    
+    def validate_api_parameters(
+        self, 
+        params: Dict[str, Any], 
+        required_params: List[str],
+        param_types: Optional[Dict[str, type]] = None,
+        param_validators: Optional[Dict[str, Pattern]] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate API parameters.
+        
+        Args:
+            params: Parameters to validate
+            required_params: List of required parameter names
+            param_types: Optional dictionary mapping parameter names to expected types
+            param_validators: Optional dictionary mapping parameter names to regex patterns
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Check required parameters
+        for param in required_params:
+            if param not in params or params[param] is None:
+                return False, f"Missing required parameter: {param}"
+                
+        # Check parameter types
+        if param_types:
+            for param, expected_type in param_types.items():
+                if param in params and params[param] is not None:
+                    if not isinstance(params[param], expected_type):
+                        return False, f"Parameter {param} must be of type {expected_type.__name__}"
+                        
+        # Check parameter validators
+        if param_validators:
+            for param, pattern in param_validators.items():
+                if param in params and params[param] is not None:
+                    if isinstance(params[param], str) and not pattern.match(params[param]):
+                        return False, f"Parameter {param} has invalid format"
+                        
+        return True, None
+        
+    def validate_password(self, password: str, username: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+        """
+        Validate a password.
+        
+        Args:
+            password: Password to validate
+            username: Username to check against (to ensure password doesn't contain username)
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not password:
+            return False, "Password is required"
+            
+        if len(password) < self.password_min_length:
+            return False, f"Password must be at least {self.password_min_length} characters long"
+            
+        if len(password) > self.password_max_length:
+            return False, f"Password must be at most {self.password_max_length} characters long"
+            
+        if not self.password_pattern.match(password):
+            return False, "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+            
+        # Check if password contains username (if provided)
+        if username and username.lower() in password.lower():
+            return False, "Password cannot contain your username"
             
         return True, None
         
-    def validate_text(
-        self, 
-        text: str, 
-        min_length: int = 1, 
-        max_length: int = 1000,
-        allowed_pattern: Optional[Pattern] = None
-    ) -> Tuple[bool, Optional[str]]:
+    def validate_text(self, text: str, min_length: int = 1, max_length: int = 1000) -> Tuple[bool, Optional[str]]:
         """
         Validate text input.
         
@@ -214,15 +332,14 @@ class InputValidator:
             text: Text to validate
             min_length: Minimum length
             max_length: Maximum length
-            allowed_pattern: Optional regex pattern for allowed characters
             
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if text is None:
+        if not text:
             return False, "Text is required"
             
-        text = str(text).strip()
+        text = text.strip()
         
         if len(text) < min_length:
             return False, f"Text must be at least {min_length} characters long"
@@ -230,113 +347,15 @@ class InputValidator:
         if len(text) > max_length:
             return False, f"Text must be at most {max_length} characters long"
             
-        if allowed_pattern and not allowed_pattern.match(text):
-            return False, "Text contains invalid characters"
+        # Check for injection attacks
+        is_safe, attack_type = self.check_for_injection(text)
+        if not is_safe:
+            return False, f"Text contains potential {attack_type} attack"
             
-        return True, None
-        
-    def sanitize_html(self, text: str) -> str:
-        """
-        Sanitize HTML to prevent XSS attacks.
-        
-        Args:
-            text: Text to sanitize
-            
-        Returns:
-            Sanitized text
-        """
-        if not text:
-            return ""
-            
-        # Escape HTML entities
-        return html.escape(text)
-        
-    def sanitize_filename(self, filename: str) -> str:
-        """
-        Sanitize a filename to prevent path traversal attacks.
-        
-        Args:
-            filename: Filename to sanitize
-            
-        Returns:
-            Sanitized filename
-        """
-        if not filename:
-            return ""
-            
-        # Remove path components
-        filename = os.path.basename(filename)
-        
-        # Replace problematic characters
-        filename = re.sub(r'[^\w\.-]', '_', filename)
-        
-        # Ensure the filename is not too long
-        if len(filename) > 255:
-            name, ext = os.path.splitext(filename)
-            filename = name[:255 - len(ext)] + ext
-            
-        return filename
-        
-    def sanitize_json(self, json_str: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
-        """
-        Sanitize and validate JSON.
-        
-        Args:
-            json_str: JSON string to sanitize
-            
-        Returns:
-            Tuple of (is_valid, parsed_json, error_message)
-        """
-        if not json_str:
-            return False, None, "JSON is empty"
-            
-        try:
-            # Parse JSON
-            parsed = json.loads(json_str)
-            
-            # Ensure it's a dictionary
-            if not isinstance(parsed, dict):
-                return False, None, "JSON must be an object"
-                
-            return True, parsed, None
-        except json.JSONDecodeError as e:
-            return False, None, f"Invalid JSON: {str(e)}"
-            
-    def validate_env_var(self, name: str, value: str, required: bool = True) -> Tuple[bool, Optional[str]]:
-        """
-        Validate an environment variable.
-        
-        Args:
-            name: Variable name
-            value: Variable value
-            required: Whether the variable is required
-            
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if required and not value:
-            return False, f"Environment variable {name} is required"
-            
-        # Specific validations based on variable name
-        if name == "API_KEY" and value:
-            if len(value) < 16:
-                return False, f"Environment variable {name} is too short"
-                
-        elif name.endswith("_URL") and value:
-            return self.validate_url(value)
-            
-        elif name.endswith("_EMAIL") and value:
-            return self.validate_email(value)
-            
-        elif name.endswith("_PATH") and value:
-            # Ensure it's a valid path
-            if not os.path.isabs(value):
-                return False, f"Environment variable {name} must be an absolute path"
-                
         return True, None
 
 
-# Create a singleton instance
+# Singleton instance
 _input_validator = None
 
 def get_input_validator() -> InputValidator:

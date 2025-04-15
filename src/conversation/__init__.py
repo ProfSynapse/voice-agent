@@ -4,26 +4,25 @@ Conversation Module
 This module provides functionality for managing conversations.
 """
 
+from src.conversation.core import ConversationService, create_conversation_service
 from src.conversation.models import (
     Conversation,
     ConversationTurn,
-    ConversationStatus,
     ConversationRole,
+    ConversationStatus,
     ConversationSummary,
     PaginatedResult
 )
-from src.conversation.service import (
-    ConversationService,
-    create_conversation_service
-)
+from src.conversation.security import get_conversation_security
 
 __all__ = [
+    'ConversationService',
+    'create_conversation_service',
     'Conversation',
     'ConversationTurn',
-    'ConversationStatus',
     'ConversationRole',
+    'ConversationStatus',
     'ConversationSummary',
     'PaginatedResult',
-    'ConversationService',
-    'create_conversation_service'
+    'get_conversation_security'
 ]

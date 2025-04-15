@@ -7,7 +7,7 @@ This module provides the data models for conversations.
 import datetime
 import enum
 from typing import List, Dict, Optional, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ConversationRole(enum.Enum):
@@ -15,6 +15,10 @@ class ConversationRole(enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+
+
+# Add TurnRole as an alias for ConversationRole for backward compatibility
+TurnRole = ConversationRole
 
 
 class ConversationStatus(enum.Enum):
@@ -61,11 +65,17 @@ class Conversation:
     id: str
     user_id: str
     title: str
-    system_prompt_id: Optional[str]
-    status: ConversationStatus
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-    turns: List[ConversationTurn]
+    system_prompt_id: Optional[str] = None
+    system_prompt: Optional[str] = None
+    status: ConversationStatus = ConversationStatus.ACTIVE
+    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    updated_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    turns: List[ConversationTurn] = field(default_factory=list)
+    
+    @property
+    def is_archived(self) -> bool:
+        """Return whether the conversation is archived."""
+        return self.status == ConversationStatus.ARCHIVED
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any], turns: Optional[List[Dict[str, Any]]] = None) -> 'Conversation':
@@ -88,6 +98,7 @@ class Conversation:
             user_id=data["user_id"],
             title=data["title"],
             system_prompt_id=data.get("system_prompt_id"),
+            system_prompt=data.get("system_prompt"),
             status=ConversationStatus(data["status"]),
             created_at=datetime.datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.datetime.fromisoformat(data["updated_at"]),
@@ -116,6 +127,7 @@ class ConversationSummary:
     updated_at: datetime.datetime
     turn_count: int
     last_message: Optional[str]
+    relevance: float = 0.0
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ConversationSummary':
@@ -136,5 +148,6 @@ class ConversationSummary:
             created_at=datetime.datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.datetime.fromisoformat(data["updated_at"]),
             turn_count=data["turn_count"],
-            last_message=data.get("last_message")
+            last_message=data.get("last_message"),
+            relevance=data.get("relevance", 0.0)
         )

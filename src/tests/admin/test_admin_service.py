@@ -29,10 +29,17 @@ class TestAdminService:
         return mock_table
 
     @pytest.fixture
-    def admin_service(self, mock_supabase_client, mock_supabase_table):
+    def mock_auth_service(self):
+        """Create a mock auth service."""
+        mock_service = MagicMock()
+        mock_service.is_admin = AsyncMock(return_value=True)
+        return mock_service
+
+    @pytest.fixture
+    def admin_service(self, mock_supabase_client, mock_supabase_table, mock_auth_service):
         """Create an admin service instance for testing."""
         with patch('src.utils.supabase_client.SupabaseTable', return_value=mock_supabase_table):
-            service = AdminService(mock_supabase_client)
+            service = AdminService(mock_supabase_client, mock_auth_service)
             return service
 
     @pytest.fixture

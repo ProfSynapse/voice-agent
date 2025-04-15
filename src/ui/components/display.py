@@ -32,19 +32,18 @@ class Text(UIComponent):
         self.text = text
         self.variant = variant
         
-    def render(self) -> Dict[str, Any]:
+    def render(self) -> str:
         """
-        Render the text component as a dictionary.
+        Render the text component as a string.
         
         Returns:
-            Text component representation as a dictionary
+            Text component representation as a string
         """
-        result = super().render()
-        result.update({
-            "text": self.text,
-            "variant": self.variant
-        })
-        return result
+        tag = "p"
+        if self.variant.startswith("h") and len(self.variant) == 2 and self.variant[1].isdigit():
+            tag = self.variant
+            
+        return f'<{tag} id="{self.id}" class="text {self.variant}">{self.text}</{tag}>'
 
 
 class Icon(UIComponent):
@@ -73,20 +72,14 @@ class Icon(UIComponent):
         self.size = size
         self.color = color
         
-    def render(self) -> Dict[str, Any]:
+    def render(self) -> str:
         """
-        Render the icon component as a dictionary.
+        Render the icon component as a string.
         
         Returns:
-            Icon component representation as a dictionary
+            Icon component representation as a string
         """
-        result = super().render()
-        result.update({
-            "name": self.name,
-            "size": self.size,
-            "color": self.color
-        })
-        return result
+        return f'<span id="{self.id}" class="icon {self.name} {self.size} {self.color}"></span>'
 
 
 class Badge(UIComponent):
@@ -112,29 +105,24 @@ class Badge(UIComponent):
         self.content = content
         self.color = color
         
-    def render(self) -> Dict[str, Any]:
+    def render(self) -> str:
         """
-        Render the badge component as a dictionary.
+        Render the badge component as a string.
         
         Returns:
-            Badge component representation as a dictionary
+            Badge component representation as a string
         """
-        result = super().render()
-        result.update({
-            "content": self.content,
-            "color": self.color
-        })
-        return result
+        return f'<span id="{self.id}" class="badge {self.color}">{self.content}</span>'
 
 
 class Avatar(UIComponent):
     """Avatar component for displaying a user avatar."""
     
     def __init__(
-        self, 
-        id: str, 
-        src: Optional[str] = None,
-        alt: str = "",
+        self,
+        id: str = "avatar",
+        name: str = "",
+        image_url: Optional[str] = None,
         size: str = "medium",
         styles: Optional[Dict[str, Any]] = None
     ):
@@ -143,27 +131,38 @@ class Avatar(UIComponent):
         
         Args:
             id: Component ID
-            src: Image source URL
-            alt: Alternative text
+            name: User name (used for fallback and alt text)
+            image_url: Image source URL
             size: Avatar size (small, medium, large)
             styles: Optional styles for the component
         """
         super().__init__(id, styles)
-        self.src = src
-        self.alt = alt
+        self.name = name
+        self.image_url = image_url
         self.size = size
+    
+    def get_initials(self) -> str:
+        """Get initials from name."""
+        if not self.name:
+            return "?"
         
-    def render(self) -> Dict[str, Any]:
+        parts = self.name.split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}{parts[-1][0]}".upper()
+        elif len(parts) == 1 and parts[0]:
+            return parts[0][0].upper()
+        else:
+            return "?"
+        
+    def render(self) -> str:
         """
-        Render the avatar component as a dictionary.
+        Render the avatar component as a string.
         
         Returns:
-            Avatar component representation as a dictionary
+            Avatar component representation as a string
         """
-        result = super().render()
-        result.update({
-            "src": self.src,
-            "alt": self.alt,
-            "size": self.size
-        })
-        return result
+        if self.image_url:
+            return f'<div id="{self.id}" class="avatar {self.size}" title="{self.name}"><img src="{self.image_url}" alt="{self.name}" /></div>'
+        else:
+            initials = self.get_initials()
+            return f'<div id="{self.id}" class="avatar {self.size} fallback" title="{self.name}" data-name="{self.name}">{initials}</div>'

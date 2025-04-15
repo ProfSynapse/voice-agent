@@ -7,47 +7,67 @@ It implements secure storage, retrieval, and encryption of sensitive configurati
 
 import os
 import json
-import logging
+from loguru import logger
 import base64
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Tuple
 from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-logger = logging.getLogger(__name__)
+# Import inside methods to avoid circular imports
 
 
 class SecretsManager:
     """Secure secrets manager for handling sensitive configuration values."""
     
-    def __init__(self, app_name: str = "voice_agent"):
+    def __init__(self, app_name: str = "voice_agent", master_key: Optional[str] = None):
         """
         Initialize the secrets manager.
         
         Args:
             app_name: Application name for namespacing secrets
+            master_key: Optional master key for encryption (if None, will try to get from environment)
         """
         self.app_name = app_name
         self.secrets_cache: Dict[str, Any] = {}
-        self.encryption_key = self._get_or_create_encryption_key()
+        self._master_key = master_key
+        self.encryption_key = self._get_encryption_key()
         self._load_secrets()
         
-    def _get_or_create_encryption_key(self) -> bytes:
+    def _get_encryption_key(self) -> bytes:
         """
-        Get or create the encryption key.
+        Get the encryption key from the master key.
         
         Returns:
             Encryption key bytes
+            
+        Raises:
+            RuntimeError: If no master key is available
         """
-        # Get the master key from environment or generate one
-        master_key = os.environ.get("SECRETS_MASTER_KEY")
+        # Get the master key from environment or use the provided one
+        if self._master_key is None:
+            # Try to get from environment directly to avoid circular dependency
+            self._master_key = os.environ.get("SECRETS_MASTER_KEY", "default-dev-key-not-for-production")
+        
+        master_key = self._master_key
+        
+        # Check if we're in production mode directly from environment
+        is_production = os.environ.get("APP_ENV") == "production"
         
         if not master_key:
-            # In production, this should be set in the environment
-            # For development, we'll use a default key (not secure for production)
-            logger.warning("SECRETS_MASTER_KEY not found in environment. Using default key (NOT SECURE FOR PRODUCTION).")
-            master_key = "default_development_key_not_for_production_use"
+            error_msg = "SECRETS_MASTER_KEY not found in environment. This is required for secure operation."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        # Validate the master key
+        if len(master_key) < 16:
+            error_msg = "SECRETS_MASTER_KEY is too short. It should be at least 16 characters."
+            logger.error(error_msg)
+            if is_production:
+                raise RuntimeError(error_msg)
+            else:
+                logger.warning("Continuing with insecure master key in development mode.")
         
         # Derive a key using PBKDF2
         salt = self.app_name.encode()
@@ -114,25 +134,47 @@ class SecretsManager:
             os.chmod(secrets_path, 0o600)  # Only owner can read/write
         except Exception as e:
             logger.error(f"Error saving secrets: {str(e)}")
-            
-    def get(self, key: str, default: Any = None) -> Any:
+    
+    def get(self, key: str, default: Any = None, required: bool = False) -> Any:
         """
         Get a secret value.
         
         Args:
             key: Secret key
             default: Default value if key not found
+            required: Whether the secret is required
             
         Returns:
             Secret value or default
+            
+        Raises:
+            ValueError: If the secret is required but not found
         """
         # First check environment variables (highest priority)
         env_value = os.environ.get(key)
         if env_value is not None:
+            # Validate the environment variable
+            self._validate_secret(key, env_value)
             return env_value
             
         # Then check the secrets cache
-        return self.secrets_cache.get(key, default)
+        cached_value = self.secrets_cache.get(key)
+        if cached_value is not None:
+            return cached_value
+            
+        # Check if the secret is required
+        if required:
+            error_msg = f"Required secret {key} not found"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+            
+        # Finally, return the default
+        if default is not None:
+            logger.warning(f"Secret {key} not found, using default value")
+        else:
+            logger.warning(f"Secret {key} not found and no default provided")
+            
+        return default
         
     def set(self, key: str, value: Any) -> None:
         """
@@ -142,6 +184,10 @@ class SecretsManager:
             key: Secret key
             value: Secret value
         """
+        # Validate the secret value
+        self._validate_secret(key, value)
+        
+        # Store in cache
         self.secrets_cache[key] = value
         self._save_secrets()
         
@@ -191,7 +237,39 @@ class SecretsManager:
             return decrypted.decode()
         except Exception as e:
             logger.error(f"Error decrypting value: {str(e)}")
-            return ""
+            return None
+            
+    def _validate_secret(self, key: str, value: Any) -> None:
+        """
+        Validate a secret value.
+        
+        Args:
+            key: Secret key
+            value: Secret value to validate
+            
+        Raises:
+            ValueError: If the secret value is invalid
+        """
+        # Skip validation for empty values
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return
+            
+        # Validate based on key patterns
+        if key.endswith("_KEY") or key.endswith("_SECRET") or key.endswith("_TOKEN"):
+            # API keys, secrets, and tokens should have minimum length
+            if isinstance(value, str) and len(value) < 8:
+                logger.warning(f"Secret {key} is suspiciously short ({len(value)} chars)")
+                
+        elif key.endswith("_PASSWORD"):
+            # Passwords should have some complexity
+            if isinstance(value, str) and (len(value) < 8 or value.isalpha() or value.isdigit()):
+                logger.warning(f"Secret {key} appears to be a weak password")
+                
+        # Check for obviously invalid values
+        if isinstance(value, str):
+            invalid_values = ["changeme", "default", "password", "secret", "apikey", "test", "example"]
+            if value.lower() in invalid_values or any(v in value.lower() for v in invalid_values):
+                logger.warning(f"Secret {key} contains suspicious default-like value")
 
 
 # Create a singleton instance

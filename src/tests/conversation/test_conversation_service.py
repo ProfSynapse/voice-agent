@@ -28,10 +28,18 @@ class TestConversationService:
         return mock_table
 
     @pytest.fixture
-    def conversation_service(self, mock_supabase_client, mock_supabase_table):
+    def mock_storage_service(self):
+        """Create a mock storage service."""
+        mock_service = MagicMock()
+        mock_service.upload_file = AsyncMock(return_value="test-file-url")
+        mock_service.delete_file = AsyncMock(return_value=True)
+        return mock_service
+
+    @pytest.fixture
+    def conversation_service(self, mock_supabase_client, mock_supabase_table, mock_storage_service):
         """Create a conversation service instance for testing."""
         with patch('src.utils.supabase_client.SupabaseTable', return_value=mock_supabase_table):
-            service = ConversationService(mock_supabase_client)
+            service = ConversationService(mock_supabase_client, mock_storage_service)
             return service
 
     @pytest.mark.asyncio

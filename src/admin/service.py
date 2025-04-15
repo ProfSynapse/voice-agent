@@ -24,76 +24,80 @@ from src.conversation.models import PaginatedResult
 class AdminService:
     """Service for admin operations."""
     
-    def __init__(self, supabase_client, auth_service):
+    def __init__(self, supabase_client, auth_service=None):
         """
-        Initialize the admin service
+        Initialize the admin service.
         
         Args:
-            supabase_client: Initialized Supabase client
-            auth_service: Authentication service for permission checks
+            supabase_client: Supabase client
+            auth_service: Optional auth service instance
         """
         self.supabase = supabase_client
-        self.auth = auth_service
+        self.auth_service = auth_service
+        
+        if not auth_service:
+            from src.auth.service import AuthService
+            self.auth_service = AuthService(supabase_client)
+            
+        # Create a SupabaseTable instance for system_prompts
+        from src.utils.supabase_client import SupabaseTable
+        self.system_prompts_table = SupabaseTable(self.supabase, "system_prompts")
     
     async def create_system_prompt(
-        self, 
-        admin_id: str, 
-        name: str, 
-        content: str, 
-        category: PromptCategory,
+        self,
+        created_by,
+        name: str,
+        content: str,
+        category: str,
         is_default: bool = False
     ) -> Optional[SystemPrompt]:
         """
         Create a new system prompt
         
         Args:
-            admin_id: ID of the admin creating the prompt
+            created_by: User creating the prompt
             name: Name/title of the prompt
             content: Prompt content
-            category: Prompt category
+            category: Prompt category (string or PromptCategory)
             is_default: Whether this is a default prompt
             
         Returns:
             Newly created system prompt or None if creation failed
         """
+        # Check admin permissions
+        if hasattr(created_by, 'role') and created_by.role.value != 'admin':
+            logger.error("Permission denied: User is not an admin")
+            raise PermissionError("Only admin users can create system prompts")
+            
         try:
-            # Check admin permissions
-            if not await self.auth.is_admin():
-                logger.error("Permission denied: User is not an admin")
-                return None
+            # Handle category - could be string or PromptCategory
+            category_value = category
+            if hasattr(category, 'value'):
+                category_value = category.value
                 
             # Create prompt in database
             prompt_data = {
-                "id": str(uuid.uuid4()),
-                "created_by": admin_id,
+                "created_by": created_by.id,
                 "name": name,
                 "content": content,
-                "category": category.value,
+                "category": category_value,
                 "is_default": is_default
             }
             
-            response = self.supabase.table("system_prompts").insert(prompt_data).execute()
+            # Use the table instance created in __init__
+            prompt = await self.system_prompts_table.create(prompt_data)
             
-            if not response.data:
+            if not prompt:
                 logger.error("Failed to create system prompt")
                 return None
                 
-            # Get the created prompt
-            prompt = response.data[0]
-            
-            # If this is a default prompt, unset other defaults in the same category
-            if is_default:
-                self.supabase.table("system_prompts").update(
-                    {"is_default": False}
-                ).neq("id", prompt["id"]).eq("category", category.value).execute()
-            
             # Create prompt object
             result = SystemPrompt(
                 id=prompt["id"],
                 created_by=prompt["created_by"],
                 name=prompt["name"],
                 content=prompt["content"],
-                category=PromptCategory(prompt["category"]),
+                category=prompt["category"],
                 is_default=prompt["is_default"],
                 created_at=datetime.datetime.fromisoformat(prompt["created_at"]),
                 updated_at=datetime.datetime.fromisoformat(prompt["updated_at"])
@@ -104,14 +108,13 @@ class AdminService:
         except Exception as e:
             logger.error(f"Create system prompt error: {str(e)}")
             return None
-    
     async def update_system_prompt(
-        self, 
-        prompt_id: str, 
-        admin_id: str, 
+        self,
+        prompt_id: str,
+        updated_by,
         name: Optional[str] = None,
         content: Optional[str] = None,
-        category: Optional[PromptCategory] = None,
+        category: Optional[str] = None,
         is_default: Optional[bool] = None
     ) -> Optional[SystemPrompt]:
         """
@@ -119,7 +122,7 @@ class AdminService:
         
         Args:
             prompt_id: ID of the prompt to update
-            admin_id: ID of the admin making the update
+            updated_by: User making the update
             name: New name (if changing)
             content: New content (if changing)
             category: New category (if changing)
@@ -128,12 +131,12 @@ class AdminService:
         Returns:
             Updated system prompt or None if update failed
         """
+        # Check admin permissions
+        if hasattr(updated_by, 'role') and updated_by.role.value != 'admin':
+            logger.error("Permission denied: User is not an admin")
+            raise PermissionError("Only admin users can update system prompts")
+            
         try:
-            # Check admin permissions
-            if not await self.auth.is_admin():
-                logger.error("Permission denied: User is not an admin")
-                return None
-                
             # Build update data
             update_data = {}
             
@@ -144,7 +147,11 @@ class AdminService:
                 update_data["content"] = content
                 
             if category is not None:
-                update_data["category"] = category.value
+                # Handle category - could be string or PromptCategory
+                category_value = category
+                if hasattr(category, 'value'):
+                    category_value = category.value
+                update_data["category"] = category_value
                 
             if is_default is not None:
                 update_data["is_default"] = is_default
@@ -153,29 +160,20 @@ class AdminService:
                 # Nothing to update, get current prompt
                 return await self.get_system_prompt(prompt_id)
                 
-            # Update prompt in database
-            response = self.supabase.table("system_prompts").update(update_data).eq("id", prompt_id).execute()
+            # Use the table instance created in __init__
+            prompt = await self.system_prompts_table.update(prompt_id, update_data)
             
-            if not response.data:
+            if not prompt:
                 logger.error(f"Failed to update system prompt: {prompt_id}")
                 return None
                 
-            # Get the updated prompt
-            prompt = response.data[0]
-            
-            # If this is now a default prompt, unset other defaults in the same category
-            if is_default:
-                self.supabase.table("system_prompts").update(
-                    {"is_default": False}
-                ).neq("id", prompt_id).eq("category", prompt["category"]).execute()
-            
             # Create prompt object
             result = SystemPrompt(
                 id=prompt["id"],
                 created_by=prompt["created_by"],
                 name=prompt["name"],
                 content=prompt["content"],
-                category=PromptCategory(prompt["category"]),
+                category=prompt["category"],
                 is_default=prompt["is_default"],
                 created_at=datetime.datetime.fromisoformat(prompt["created_at"]),
                 updated_at=datetime.datetime.fromisoformat(prompt["updated_at"])
@@ -187,38 +185,31 @@ class AdminService:
             logger.error(f"Update system prompt error: {str(e)}")
             return None
     
-    async def delete_system_prompt(self, prompt_id: str) -> bool:
+    async def delete_system_prompt(self, prompt_id: str, deleted_by) -> bool:
         """
         Delete a system prompt
         
         Args:
             prompt_id: ID of the prompt to delete
+            deleted_by: User making the deletion request
             
         Returns:
             True if deletion was successful, False otherwise
         """
+        # Check admin permissions
+        if hasattr(deleted_by, 'role') and deleted_by.role.value != 'admin':
+            logger.error("Permission denied: User is not an admin")
+            raise PermissionError("Only admin users can delete system prompts")
+            
         try:
-            # Check admin permissions
-            if not await self.auth.is_admin():
-                logger.error("Permission denied: User is not an admin")
-                return False
-                
-            # Check if prompt is in use
-            conversations_response = self.supabase.table("conversations").select("id").eq("system_prompt_id", prompt_id).limit(1).execute()
+            # Use the table instance created in __init__
+            result = await self.system_prompts_table.delete(prompt_id)
             
-            if conversations_response.data:
-                logger.error(f"Cannot delete prompt {prompt_id}: In use by conversations")
-                return False
-                
-            # Delete prompt from database
-            response = self.supabase.table("system_prompts").delete().eq("id", prompt_id).execute()
-            
-            return bool(response.data)
+            return bool(result)
             
         except Exception as e:
             logger.error(f"Delete system prompt error: {str(e)}")
             return False
-    
     async def get_system_prompt(self, prompt_id: str) -> Optional[SystemPrompt]:
         """
         Get a system prompt by ID
@@ -230,22 +221,20 @@ class AdminService:
             System prompt or None if not found
         """
         try:
-            # Get prompt from database
-            response = self.supabase.table("system_prompts").select("*").eq("id", prompt_id).single().execute()
+            # Use the table instance created in __init__
+            prompt = await self.system_prompts_table.get_by_id(prompt_id)
             
-            if not response.data:
+            if not prompt:
                 logger.error(f"System prompt not found: {prompt_id}")
                 return None
                 
-            prompt = response.data
-            
             # Create prompt object
             result = SystemPrompt(
                 id=prompt["id"],
                 created_by=prompt["created_by"],
                 name=prompt["name"],
                 content=prompt["content"],
-                category=PromptCategory(prompt["category"]),
+                category=prompt["category"],
                 is_default=prompt["is_default"],
                 created_at=datetime.datetime.fromisoformat(prompt["created_at"]),
                 updated_at=datetime.datetime.fromisoformat(prompt["updated_at"])
@@ -256,6 +245,83 @@ class AdminService:
         except Exception as e:
             logger.error(f"Get system prompt error: {str(e)}")
             return None
+            
+    async def get_all_system_prompts(self) -> List[SystemPrompt]:
+        """
+        Get all system prompts.
+        
+        Returns:
+            List of all system prompts
+        """
+        try:
+            # Use the table instance created in __init__
+            response = await self.system_prompts_table.get_all()
+            
+            if not response:
+                return []
+                
+            prompts = []
+            for prompt_data in response:
+                prompt = SystemPrompt(
+                    id=prompt_data["id"],
+                    created_by=prompt_data["created_by"],
+                    name=prompt_data["name"],
+                    content=prompt_data["content"],
+                    category=prompt_data["category"],
+                    is_default=prompt_data["is_default"],
+                    created_at=datetime.datetime.fromisoformat(prompt_data["created_at"]),
+                    updated_at=datetime.datetime.fromisoformat(prompt_data["updated_at"])
+                )
+                prompts.append(prompt)
+            
+            return prompts
+            
+        except Exception as e:
+            logger.error(f"Get all system prompts error: {str(e)}")
+            return []
+            
+    async def get_system_prompts_by_category(self, category: str) -> List[SystemPrompt]:
+        """
+        Get system prompts by category.
+        
+        Args:
+            category: Category to filter by
+            
+        Returns:
+            List of system prompts in the specified category
+        """
+        try:
+            # Handle category - could be string or PromptCategory
+            category_value = category
+            if hasattr(category, 'value'):
+                category_value = category.value
+                
+            # Use the table instance created in __init__
+            filters = {"filters": [{"column": "category", "value": category_value}]}
+            response = await self.system_prompts_table.get_all(filters)
+            
+            if not response:
+                return []
+                
+            prompts = []
+            for prompt_data in response:
+                prompt = SystemPrompt(
+                    id=prompt_data["id"],
+                    created_by=prompt_data["created_by"],
+                    name=prompt_data["name"],
+                    content=prompt_data["content"],
+                    category=prompt_data["category"],
+                    is_default=prompt_data["is_default"],
+                    created_at=datetime.datetime.fromisoformat(prompt_data["created_at"]),
+                    updated_at=datetime.datetime.fromisoformat(prompt_data["updated_at"])
+                )
+                prompts.append(prompt)
+            
+            return prompts
+            
+        except Exception as e:
+            logger.error(f"Get system prompts by category error: {str(e)}")
+            return []
     
     async def list_system_prompts(
         self, 
@@ -358,42 +424,54 @@ class AdminService:
             logger.error(f"Get default prompt error: {str(e)}")
             return None
     
-    async def set_default_prompt(self, prompt_id: str) -> bool:
+    async def set_default_system_prompt(self, prompt_id: str, updated_by) -> bool:
         """
         Set a prompt as the default for its category
         
         Args:
             prompt_id: ID of the prompt to set as default
+            updated_by: User making the update
             
         Returns:
             True if successful, False otherwise
         """
-        try:
-            # Check admin permissions
-            if not await self.auth.is_admin():
-                logger.error("Permission denied: User is not an admin")
-                return False
-                
-            # Get prompt to get its category
-            prompt_response = self.supabase.table("system_prompts").select("category").eq("id", prompt_id).single().execute()
+        # Check admin permissions
+        if hasattr(updated_by, 'role') and updated_by.role.value != 'admin':
+            logger.error("Permission denied: User is not an admin")
+            raise PermissionError("Only admin users can set default system prompts")
             
-            if not prompt_response.data:
+        try:
+            # Get all prompts to find the current default in the same category
+            prompts = await self.get_all_system_prompts()
+            
+            # Find the prompt we want to set as default
+            target_prompt = None
+            current_default_id = None
+            
+            for prompt in prompts:
+                if prompt.id == prompt_id:
+                    target_prompt = prompt
+            
+            if not target_prompt:
                 logger.error(f"System prompt not found: {prompt_id}")
                 return False
                 
-            category = prompt_response.data["category"]
+            # Find the current default in the same category
+            for prompt in prompts:
+                if prompt.is_default and prompt.category == target_prompt.category and prompt.id != prompt_id:
+                    current_default_id = prompt.id
+                    break
+                
+            # Use the table instance created in __init__
             
-            # Unset other defaults in the same category
-            self.supabase.table("system_prompts").update(
-                {"is_default": False}
-            ).eq("category", category).execute()
+            # First, unset the current default if there is one
+            if current_default_id:
+                await self.system_prompts_table.update(current_default_id, {"is_default": False})
             
-            # Set this prompt as default
-            response = self.supabase.table("system_prompts").update(
-                {"is_default": True}
-            ).eq("id", prompt_id).execute()
+            # Then set the new default
+            await self.system_prompts_table.update(prompt_id, {"is_default": True})
             
-            return bool(response.data)
+            return True
             
         except Exception as e:
             logger.error(f"Set default prompt error: {str(e)}")
@@ -622,13 +700,14 @@ class AdminService:
             return datetime.datetime(2000, 1, 1)  # Far in the past
 
 
-def create_admin_service(supabase_client, auth_service):
+def create_admin_service(supabase_client, auth_service, conversation_service=None):
     """
     Create and initialize the admin service
     
     Args:
         supabase_client: Initialized Supabase client
         auth_service: Authentication service for permission checks
+        conversation_service: Optional conversation service for additional functionality
         
     Returns:
         Initialized AdminService instance

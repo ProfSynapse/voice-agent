@@ -256,3 +256,30 @@ def create_storage_service(supabase, config):
         Initialized StorageService instance
     """
     return StorageService(supabase, config)
+
+
+def get_storage_service():
+    """
+    Get the storage service.
+    
+    This is a wrapper around create_storage_service that gets the necessary
+    dependencies and creates the service.
+    
+    Returns:
+        Initialized StorageService instance
+    """
+    from src.utils.supabase_client import get_supabase_client
+    from src.config.config_service import get_config_service
+    
+    supabase_client = get_supabase_client()
+    config_service = get_config_service()
+    
+    # Get storage configuration
+    storage_config = {
+        "audio_bucket": "audio",
+        "audio_public": True,
+        "files_bucket": "files",
+        "files_public": True
+    }
+    
+    return create_storage_service(supabase_client, storage_config)

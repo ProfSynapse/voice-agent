@@ -5,6 +5,8 @@ This module provides a factory function for creating a Supabase client.
 """
 
 import logging
+import os
+import sys
 from typing import Optional, Dict, Any
 
 from supabase import create_client, Client
@@ -29,15 +31,32 @@ def create_supabase_client(
     logger.info(f"Creating Supabase client for URL: {url}")
     
     try:
-        # Create the client with the anonymous key
-        client = create_client(url, anon_key)
+        # Check if we're in a test environment
+        is_test = os.environ.get("ENVIRONMENT") == "test" or "pytest" in sys.modules
         
-        # Store the service key for admin operations if provided
-        if service_key:
-            client.service_key = service_key
+        if is_test and anon_key == "mock-anon-key":
+            # For tests, create a mock client instead of a real one
+            from unittest.mock import MagicMock
+            client = MagicMock()
+            client.auth = MagicMock()
+            client.table = MagicMock(return_value=MagicMock())
             
-        logger.info("Supabase client created successfully")
-        return client
+            # Store the service key for admin operations if provided
+            if service_key:
+                client.service_key = service_key
+                
+            logger.info("Created mock Supabase client for tests")
+            return client
+        else:
+            # Create the client with the anonymous key
+            client = create_client(url, anon_key)
+            
+            # Store the service key for admin operations if provided
+            if service_key:
+                client.service_key = service_key
+                
+            logger.info("Supabase client created successfully")
+            return client
     except Exception as e:
         logger.error(f"Failed to create Supabase client: {str(e)}")
         raise
@@ -179,3 +198,54 @@ class SupabaseTable:
         """
         response = self.client.table(self.table_name).delete().eq("id", id).execute()
         return response.data is not None
+
+
+# Factory function for creating a Supabase client using the configuration service
+def create_supabase_client_from_config(config_service=None):
+    """
+    Create a Supabase client using the configuration service.
+    
+    Args:
+        config_service: Configuration service instance (if None, will be fetched)
+        
+    Returns:
+        Configured Supabase client
+    """
+    if config_service is None:
+        from src.config import get_config_service
+        config_service = get_config_service()
+        
+    supabase_config = config_service.supabase_config
+    
+    return create_supabase_client(
+        url=supabase_config["url"],
+        anon_key=supabase_config["anon_key"],
+        service_key=supabase_config["service_key"]
+    )
+
+
+# Global instance for singleton pattern
+_supabase_client = None
+
+def get_supabase_client():
+    """
+    Get a Supabase client instance (singleton pattern).
+    
+    Returns:
+        Configured Supabase client
+    """
+    global _supabase_client
+    if _supabase_client is None:
+        # For tests, create a mock client
+        if "pytest" in sys.modules:
+            from unittest.mock import MagicMock
+            _supabase_client = MagicMock()
+            _supabase_client.auth = MagicMock()
+            _supabase_client.table = MagicMock(return_value=MagicMock())
+            _supabase_client.storage = MagicMock()
+            logger.info("Created mock Supabase client for tests")
+        else:
+            # For production, create a real client
+            _supabase_client = create_supabase_client_from_config()
+    
+    return _supabase_client

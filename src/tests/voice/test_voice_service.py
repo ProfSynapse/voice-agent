@@ -299,18 +299,20 @@ class TestVoiceService:
         # Assert
         assert result is None
 
-    def test_set_state(self, voice_service):
+    @pytest.mark.asyncio
+    async def test_set_state(self, voice_service):
         """Test setting the voice service state."""
         # Arrange
         callback = AsyncMock()
         voice_service.on_state_change = callback
         
         # Act
-        voice_service._set_state(VoiceState.CONNECTING)
-        
-        # Assert
-        assert voice_service.state == VoiceState.CONNECTING
-        # Note: We can't easily test the async task creation
+        with patch('asyncio.create_task') as mock_create_task:
+            voice_service._set_state(VoiceState.CONNECTING)
+            
+            # Assert
+            assert voice_service.state == VoiceState.CONNECTING
+            mock_create_task.assert_called_once()
 
     def test_create_voice_service(self):
         """Test creating a voice service."""

@@ -1,0 +1,32 @@
+[project]
+name = "voice-agent"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "ProfessorSynapse",email = "139566532+ProfessorSynapse@users.noreply.github.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "python-dotenv (>=1.1.0,<2.0.0)",
+    "fastapi (>=0.115.12,<0.116.0)",
+    "uvicorn (>=0.34.1,<0.35.0)",
+    "pydantic (>=2.11.3,<3.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "supabase (>=2.15.0,<3.0.0)",
+    "postgrest (>=1.0.1,<2.0.0)",
+    "gotrue (>=2.12.0,<3.0.0)",
+    "websockets (>=11.0.3,<15.0.0)",
+    "aiortc (>=1.11.0,<2.0.0)",
+    "pydub (>=0.25.1,<0.26.0)",
+    "sounddevice (>=0.5.1,<0.6.0)",
+    "numpy (>=2.2.4,<3.0.0)",
+    "loguru (>=0.7.3,<0.8.0)",
+    "pytest-cov (>=6.1.1,<7.0.0)",
+    "pytest-asyncio (>=0.26.0,<0.27.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
